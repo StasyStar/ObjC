@@ -19,6 +19,8 @@
     
     self.userDefaults = [NSUserDefaults standardUserDefaults];
     self.todoItems = [NSMutableArray array];
+    self.usernameField.delegate = self;
+    self.todoField.delegate = self;
     
     // Настройка таблицы
     self.tableView.dataSource = self;
@@ -38,32 +40,37 @@
 #pragma mark - Data Storage Methods
 
 - (void)saveUserData {
-    // Сохранение в UserDefaults
     [self.userDefaults setObject:self.usernameField.text forKey:@"username"];
+    [self.userDefaults setObject:self.todoField.text forKey:@"todoText"];
     [self.userDefaults setObject:[NSDate date] forKey:@"lastVisit"];
     [self.userDefaults synchronize];
     
-    // Сохранение в Keychain
     [self saveToKeychain:self.usernameField.text forKey:@"username"];
+    NSLog(@"Saving todoText: %@", self.todoField.text);
 }
 
 - (void)loadUserData {
-    // Загрузка из UserDefaults
     NSString *username = [self.userDefaults stringForKey:@"username"];
+    NSString *todoText = [self.userDefaults stringForKey:@"todoText"];
     NSDate *lastVisit = [self.userDefaults objectForKey:@"lastVisit"];
     
-    // Загрузка из Keychain (если нет в UserDefaults)
     if (!username) {
         username = [self loadFromKeychain:@"username"];
     }
-    
+
     self.usernameField.text = username;
-    self.lastVisitLabel.text = [self formatDate:lastVisit];
+    self.todoField.text = todoText;
+    self.lastVisitLabel.text = [NSString stringWithFormat:@"Дата последнего визита: %@", [self formatDate:lastVisit]];
+    NSLog(@"Loaded todoText: %@", todoText);
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    [self updateLastVisitDate];
 }
 
 - (void)updateLastVisitDate {
     NSDate *now = [NSDate date];
-    self.lastVisitLabel.text = [self formatDate:now];
     [self.userDefaults setObject:now forKey:@"lastVisit"];
     [self.userDefaults synchronize];
 }
@@ -112,6 +119,12 @@
             break;
     }
     [self.tableView reloadData];
+}
+
+- (void)textFieldDidEndEditing:(UITextField *)textField {
+    if (textField == self.usernameField || textField == self.todoField) {
+        [self saveUserData];
+    }
 }
 
 #pragma mark - Storage Implementations
@@ -225,6 +238,7 @@
     
     SecItemDelete((CFDictionaryRef)query);
     SecItemAdd((CFDictionaryRef)query, NULL);
+    NSLog(@"Saving username to keychain: %@", value);
 }
 
 - (NSString *)loadFromKeychain:(NSString *)key {
@@ -242,7 +256,7 @@
         NSData *data = (__bridge_transfer NSData *)result;
         return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     }
-    
+    NSLog(@"Loaded from keychain: %@", result ? [[NSString alloc] initWithData:(__bridge NSData *)result encoding:NSUTF8StringEncoding] : @"nil");
     return nil;
 }
 
@@ -303,11 +317,14 @@
         [self.todoItems addObject:item];
         [self.tableView reloadData];
         [self saveTodoItems];
+
+        [self saveUserData];
         
         self.todoField.text = @"";
         [self.todoField resignFirstResponder];
     }
 }
+
 
 - (IBAction)resetAllChecks:(id)sender {
     for (TodoItem *item in self.todoItems) {
